@@ -10,23 +10,20 @@ from sensor_msgs.msg import LaserScan
 from cv2 import namedWindow, cvtColor, imshow
 from sensor_msgs.msg import Image
 
+
 from cv_bridge import CvBridge
 from cv2 import COLOR_BGR2GRAY, waitKey
 import numpy 
 import cv2
 import random
 class robot:
-    last = [1.0,1.0,1.0]
-    count = 0
-    is_reversing = False
     priority = False
     goal_in_sight = False
     def __init__(self):
         # https://github.com/LCAS/teaching/blob/lcas_melodic/cmp3103m-code-fragments/scripts/opencv_bridge.py
         self.bridge = CvBridge()
-        self.laser_sub = rospy.Subscriber("/scan", LaserScan,self.scan_and_search,queue_size = 1)
-        self.image_sub = rospy.Subscriber("/camera/rgb/image_raw",Image,self.image_callback,queue_size = 1)
-        #self.image_sub = rospy.Subscriber("/odom",Odometry, self.check_for_motion)
+        self.laser_sub = rospy.Subscriber("/scan", LaserScan,self.scan_and_search)
+        self.image_sub = rospy.Subscriber("/camera/rgb/image_raw",Image,self.image_callback)
         self.pub = rospy.Publisher("/mobile_base/commands/velocity",Twist,queue_size = 1)
         
         self.twist = Twist()
@@ -37,33 +34,7 @@ class robot:
         # 5 hz
         r = rospy.Rate(5)
 
-    def check_for_motion(self,a):
-        if(self.is_reversing):
-            self.priority = True
-            self.rev()
-        # Get position
-        a = a.pose.pose.orientation
-        y, p, r = transformations.euler_from_quaternion([a.w, a.x, a.y, a.z])
-        # Store pos for this cycle
-        f = [y,p,r] # temp var
-        print(abs(f[0]-self.last[0]))
-        # if f == the last f, then reverse, this detects for movement
-        # If the last and this cycles positions are unchacnged, go backwards 
-        if abs(f[0]-self.last[0]) >= 0.0002: # We cannot get absoloute values due to the nature of sensors
-            self.priority = True
-            self.is_reversing = True
-        else:
-            self.priority = False
-        # Make 'last' the new position 
-        self.last = f
-    def rev(self):
-        self.twist.linear.x = -0.5
-        self.pub.publish(self.twist)
-        print("reversing")
-        self.count = self.count + 1
-        if(self.count == 10):
-            self.is_reversing = False
-            self.count == 0
+      
     def go_for_the_goal(self,F,mask3,w):
         # The final dash that tunnel visions on the goal, dashing straight for it using modified 'line follower' code.
         if F['m00'] == 0:
@@ -100,7 +71,7 @@ class robot:
 
     def image_callback(self, data):
         #namedWindow("Image window")
-        print(self.priority)
+        
         cv2.namedWindow("Image window", 1)
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
         cv_image2 = self.bridge.imgmsg_to_cv2(data, "bgr8")
@@ -130,10 +101,8 @@ class robot:
         #For testing masks
         cv_image2[h/4*3:,0:-1] = 0 
         
-        #mask[0:h, 0:w/5] = 0
-        mask[0:h, (w/2)+10:] = 0
-        #mask[0:h, 0:w/5] = 0
-        #mask[0:h, (w/6)*5:] = 0
+        mask[0:h, 0:w/5] = 0
+        mask[0:h, (w/5)*4:-1] = 0
         
         mask2[h/4*3:, 0:-1] = 0
 
@@ -175,15 +144,17 @@ class robot:
                     cx = int(M['m10']/M['m00'])
                     cy = int(M['m01']/M['m00'])
                     
+                    cv2.circle(cv_image, (cx, cy), 20, (0, 0, 255), -1)
                     err = cx - w/2
-                    self.twist.linear.x = 0.2
-                    self.twist.angular.z = -float(err) / 200
-                    if M2['m00'] > 0: # Blue
+                    self.twist.linear.x = 0.1
+                    self.twist.angular.z = -float(err) / 100
+                    if M2['m00'] > 0:
                         cx = int(M2['m10']/M2['m00'])
                         cy = int(M2['m01']/M2['m00'])
                         
+                        cv2.circle(cv_image, (cx, cy), 20, (0, 0, 255), -1)
                         err = cx - w/2
-                        self.twist.linear.x = 0.2
+                        self.twist.linear.x = 0.1
                         self.twist.angular.z = -float(err) / 2000
                     self.pub.publish(self.twist)
                 else: # If a yellow line cannot be found, rotate on the spot until one is found
@@ -192,12 +163,12 @@ class robot:
                         a = random.randint(1,10)
                         if(a < 5):
                             print("spinning")
+                            self.twist.angular.z = 0.6
+                            self.pub.publish(self.twist)
+                        else:
+                            print("spinning aaaa")
                             self.twist.angular.z = -0.6
                             self.pub.publish(self.twist)
-                        #else:
-                        #    print("spinning aaaa")
-                        #    self.twist.angular.z = -0.6
-                        #    self.pub.publish(self.twist)
         imshow("Image window", mask)
         waitKey(1)
 
